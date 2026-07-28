@@ -39,7 +39,7 @@ pkgm list|ls                            list what's installed
 pkgm outdated                           list outdated installations
 pkgm update|up|upgrade                  update installations to latest
 pkgm pin          <pkg>@version ...     install pinned to an exact version
-pkgm run|x        <pkg> [-- args...]    run a pkg (shell-free; works FROM scratch)
+pkgm run|x        <pkg> [-- args...]    run a pkg (works FROM scratch)
 
 flags: -h/--help  -v/--version  -p/--pin
 env:   PKGX_DIR   bottle store (default: ~/.pkgx)
@@ -51,9 +51,12 @@ surface and the `~/.local` vs `/usr/local` prefix logic mirror the reference
 
 ## `FROM scratch`
 
-`run` is a shell-free launcher: it installs a package's closure (plus the pkgx
-glibc bottle on Linux) and exec's the binary through the pkgx dynamic loader,
-so it works even where the bottle's `/lib` `PT_INTERP` does not exist.
+`run` installs a package's full closure (its declared deps plus the implicit
+libc/gcc libraries — see [automatic closure completion](#automatic-closure-completion))
+and makes the pkgx loader available at `/lib/ld-linux`, so the binary runs even
+on an image with no system libc. Packages that ship a `#!/bin/sh` wrapper
+(git, …) also get the pkgx bash + coreutils — see
+[wrapper scripts](#wrapper-scripts).
 
 ```dockerfile
 FROM scratch
