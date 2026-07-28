@@ -64,10 +64,51 @@ func TestDispatchUnknown(t *testing.T) {
 	}
 }
 
-func TestInstallPrefix(t *testing.T) {
+func TestResolvePrefix(t *testing.T) {
 	t.Setenv("HOME", "/tmp/h")
-	if p := installPrefix(true); p != "/tmp/h/.local" {
+	t.Setenv("PKGM_PREFIX", "")
+	// forceLocal → ~/.local
+	if p := resolvePrefix(flags{}, true); p != "/tmp/h/.local" {
 		t.Errorf("forceLocal = %s", p)
+	}
+	// --prefix flag wins over everything
+	if p := resolvePrefix(flags{prefix: "/opt/x"}, false); p != "/opt/x" {
+		t.Errorf("flag prefix = %s", p)
+	}
+	// PKGM_PREFIX env wins when no flag
+	t.Setenv("PKGM_PREFIX", "/usr")
+	if p := resolvePrefix(flags{}, false); p != "/usr" {
+		t.Errorf("env prefix = %s", p)
+	}
+	// non-root, no env/flag → ~/.local
+	t.Setenv("PKGM_PREFIX", "")
+	if os.Geteuid() != 0 {
+		if p := resolvePrefix(flags{}, false); p != "/tmp/h/.local" {
+			t.Errorf("nonroot default = %s", p)
+		}
+	}
+}
+
+func TestLocalPrefixNoHome(t *testing.T) {
+	// A scratch container often has no usable $HOME.
+	t.Setenv("HOME", "")
+	if p := localPrefix(); p != "/usr/local" {
+		t.Errorf("no-HOME localPrefix = %s", p)
+	}
+}
+
+func TestParsePrefixFlag(t *testing.T) {
+	_, f := parseArgs([]string{"install", "--prefix", "/opt", "pkg"})
+	if f.prefix != "/opt" {
+		t.Errorf("--prefix value = %q", f.prefix)
+	}
+	_, f2 := parseArgs([]string{"install", "--prefix=/usr", "pkg"})
+	if f2.prefix != "/usr" {
+		t.Errorf("--prefix= value = %q", f2.prefix)
+	}
+	_, f3 := parseArgs([]string{"-P", "/p", "pkg"})
+	if f3.prefix != "/p" {
+		t.Errorf("-P value = %q", f3.prefix)
 	}
 }
 
@@ -103,7 +144,7 @@ func TestCommandsE2E(t *testing.T) {
 	if err := cmdOutdated(""); err != nil { // 1.0.0 -> 2.0.0
 		t.Fatal(err)
 	}
-	if err := cmdUpdate(installPrefix(false)); err != nil {
+	if err := cmdUpdate(resolvePrefix(flags{}, false)); err != nil {
 		t.Fatal(err)
 	}
 	// after update the installed version is 2.0.0

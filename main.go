@@ -34,28 +34,41 @@ flags:
   -h, --help        show this help
   -v, --version     show version
   -p, --pin         pin the requested version(s) exactly
+  -P, --prefix DIR  install prefix (bins go to DIR/bin); overrides root detection
 
 env:
   PKGX_DIR          bottle store (default: ~/.pkgx)
+  PKGM_PREFIX       default install prefix (ideal for FROM scratch: be root,
+                    set PKGM_PREFIX=/usr, no sudo needed)
 `
 
 type flags struct {
 	help, showVersion, pin bool
+	prefix                 string
 }
 
-// parseArgs splits boolean flags from positional arguments (getopt-style,
-// matching the reference pkgm's -h/-v/-p aliases).
+// parseArgs splits flags from positional arguments (getopt-style, matching the
+// reference pkgm's -h/-v/-p aliases) and captures the value-taking
+// --prefix/-P <dir> (also accepts --prefix=<dir>).
 func parseArgs(argv []string) ([]string, flags) {
 	var f flags
 	var pos []string
-	for _, a := range argv {
-		switch a {
-		case "-h", "--help":
+	for i := 0; i < len(argv); i++ {
+		a := argv[i]
+		switch {
+		case a == "-h" || a == "--help":
 			f.help = true
-		case "-v", "--version":
+		case a == "-v" || a == "--version":
 			f.showVersion = true
-		case "-p", "--pin":
+		case a == "-p" || a == "--pin":
 			f.pin = true
+		case a == "-P" || a == "--prefix":
+			if i+1 < len(argv) {
+				i++
+				f.prefix = argv[i]
+			}
+		case strings.HasPrefix(a, "--prefix="):
+			f.prefix = strings.TrimPrefix(a, "--prefix=")
 		default:
 			pos = append(pos, a)
 		}
@@ -90,22 +103,22 @@ func run(argv []string) int {
 func dispatch(cmd string, args []string, f flags) error {
 	switch cmd {
 	case "install", "i":
-		return cmdInstall(args, installPrefix(false), f)
+		return cmdInstall(args, resolvePrefix(f, false), f)
 	case "local-install", "li":
-		return cmdInstall(args, localPrefix(), f)
+		return cmdInstall(args, resolvePrefix(f, true), f)
 	case "shim", "stub":
-		return cmdShim(args, installPrefix(false))
+		return cmdShim(args, resolvePrefix(f, false))
 	case "uninstall", "rm":
-		return cmdUninstall(args, installPrefix(false))
+		return cmdUninstall(args, resolvePrefix(f, false))
 	case "list", "ls":
-		return cmdList(installPrefix(false))
+		return cmdList(resolvePrefix(f, false))
 	case "outdated":
-		return cmdOutdated(installPrefix(false))
+		return cmdOutdated(resolvePrefix(f, false))
 	case "up", "update", "upgrade":
-		return cmdUpdate(installPrefix(false))
+		return cmdUpdate(resolvePrefix(f, false))
 	case "pin":
 		f.pin = true
-		return cmdInstall(args, installPrefix(false), f)
+		return cmdInstall(args, resolvePrefix(f, false), f)
 	case "run", "x":
 		return cmdRun(args)
 	default:
@@ -122,17 +135,34 @@ func pkgxDir() string {
 	return filepath.Join(home, ".pkgx")
 }
 
-// installPrefix mirrors the reference: /usr/local as root, else ~/.local.
-func installPrefix(forceLocal bool) string {
-	if forceLocal || os.Geteuid() != 0 {
+// resolvePrefix decides where binaries are installed. Explicit wins:
+// --prefix flag, then $PKGM_PREFIX (both ideal for a `FROM scratch` image
+// where you are root, there is no sudo, and $HOME is unset). Otherwise it
+// mirrors the reference pkgm: /usr/local as root, else ~/.local. Being root is
+// a fully-supported first-class mode here — pkgm never nags to use sudo.
+func resolvePrefix(f flags, forceLocal bool) string {
+	if f.prefix != "" {
+		return f.prefix
+	}
+	if p := os.Getenv("PKGM_PREFIX"); p != "" {
+		return p
+	}
+	if forceLocal {
 		return localPrefix()
 	}
-	return "/usr/local"
+	if os.Geteuid() == 0 {
+		return "/usr/local"
+	}
+	return localPrefix()
 }
 
+// localPrefix is ~/.local, falling back to the system prefix when there is no
+// usable $HOME (e.g. a bare scratch container running as root).
 func localPrefix() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local")
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".local")
+	}
+	return "/usr/local"
 }
 
 // parseReq splits "project@constraint" into its parts; pin forces an exact "=".

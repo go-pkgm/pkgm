@@ -70,6 +70,31 @@ GNU bash, version 5.3.0(1)-release (aarch64-unknown-linux-gnu)
 A `FROM scratch` image whose only file is the `pkgm` binary can install **and
 run** real packages, with no system libc.
 
+### root without sudo
+
+A scratch container runs as **root**, has **no `sudo`**, and often no `$HOME`.
+The reference pkgm's `root → /usr/local`, `user → ~/.local`, "elevate with
+sudo" model does not fit. pkgm treats root as a first-class install mode (no
+"use sudo" nagging) and lets you pin the prefix explicitly — ideal in a
+Dockerfile:
+
+```dockerfile
+FROM scratch
+COPY pkgm /pkgm
+ENV PKGX_DIR=/pkgx
+ENV PKGM_PREFIX=/usr     # bins land in /usr/bin; no sudo, no HOME needed
+ENTRYPOINT ["/pkgm"]
+```
+
+```sh
+$ docker run --rm -e PKGM_PREFIX=/usr pkgm-scratch install gnu.org/bash
+  installed gnu.org/bash v5.3.0
+linked 2 binaries → /usr/bin
+```
+
+Prefix precedence: `--prefix`/`-P` flag → `PKGM_PREFIX` → root ? `/usr/local` :
+`~/.local` (falling back to `/usr/local` when there is no usable `$HOME`).
+
 ## How it works
 
 1. **resolve** — read `<project>/package.yml` from the pkgx pantry and walk the
