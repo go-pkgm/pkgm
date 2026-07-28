@@ -179,11 +179,21 @@ func TestInstallErrors(t *testing.T) {
 }
 
 func TestRunExec(t *testing.T) {
+	// On linux, cmdRun also pulls gnu.org/glibc and exec's through the loader,
+	// so the fake server must serve it too.
 	defer fakeServer(t, map[string]fakePkg{
 		"acme.org/tool": {
 			versions: []string{"1.0.0"},
 			yaml:     "provides:\n  - bin/tool\n",
 			files:    map[string]string{"bin/tool": "#!x\n"},
+		},
+		"gnu.org/glibc": {
+			versions: []string{"2.44.0"},
+			yaml:     "provides:\n  - bin/ldd\n",
+			files: map[string]string{
+				"lib/glibc-2.44/ld-linux-x86-64.so.2":  "x",
+				"lib/glibc-2.44/ld-linux-aarch64.so.1": "x",
+			},
 		},
 	})()
 	dir := t.TempDir()
@@ -198,9 +208,11 @@ func TestRunExec(t *testing.T) {
 	if err := cmdRun([]string{"acme.org/tool", "--", "--flag"}); err != nil {
 		t.Fatal(err)
 	}
-	// on non-linux the binary is exec'd directly with trailing args
-	if len(gotArgv) == 0 || !strings.HasSuffix(gotArgv[0], "bin/tool") {
-		t.Errorf("argv = %v", gotArgv)
+	// Platform-agnostic: the target binary appears in argv (directly on darwin,
+	// after the loader + --library-path on linux) and trailing args survive.
+	joined := strings.Join(gotArgv, " ")
+	if !strings.Contains(joined, "bin/tool") {
+		t.Errorf("target bin not in argv: %v", gotArgv)
 	}
 	if gotArgv[len(gotArgv)-1] != "--flag" {
 		t.Errorf("trailing arg lost: %v", gotArgv)
