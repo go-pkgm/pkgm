@@ -4,6 +4,8 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/go-pkgm/pkgm.svg)](https://pkg.go.dev/github.com/go-pkgm/pkgm)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
 
+[Home](https://go-pkgm.github.io/) · [Docs](https://go-pkgm.github.io/docs/)
+
 A **dependency-free, pure-Go** package manager for [pkgx](https://pkgx.sh)
 bottles — a single `CGO_ENABLED=0` binary that runs on a `FROM scratch` image
 with **zero** runtime dependencies.
