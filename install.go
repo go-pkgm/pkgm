@@ -113,12 +113,17 @@ func closureLibPath(closure []resolved, dir string) string {
 	return strings.Join(paths, ":")
 }
 
-// findLoader locates the pkgx glibc dynamic loader in an installed closure.
-func findLoader(dir string) string {
-	name := map[string]string{
+// loaderName is the dynamic-loader soname for the current architecture.
+func loaderName() string {
+	return map[string]string{
 		"aarch64": "ld-linux-aarch64.so.1",
 		"x86-64":  "ld-linux-x86-64.so.2",
 	}[goarch()]
+}
+
+// findLoader locates the pkgx glibc dynamic loader in an installed closure.
+func findLoader(dir string) string {
+	name := loaderName()
 	if name == "" {
 		return ""
 	}
@@ -127,6 +132,41 @@ func findLoader(dir string) string {
 		return matches[len(matches)-1]
 	}
 	return ""
+}
+
+var loaderDirs = []string{"/lib", "/lib64"}
+
+// setupScratchRootfs makes the pkgx loader and a shell available at their
+// canonical absolute paths (best-effort). On a FROM-scratch image this lets
+// every bottle ELF — the one we exec AND any child processes it spawns —
+// resolve its PT_INTERP=/lib/ld-linux natively, and lets "#!/bin/sh" wrapper
+// scripts resolve to pkgm's own embedded shell. On a normal system these paths
+// already exist, so os.Symlink fails and is ignored (no clobbering).
+func setupScratchRootfs(loader string) {
+	if name := loaderName(); name != "" {
+		for _, d := range loaderDirs {
+			_ = os.MkdirAll(d, 0o755)
+			_ = os.Symlink(loader, filepath.Join(d, name))
+		}
+	}
+	if self, err := os.Executable(); err == nil {
+		_ = os.MkdirAll("/bin", 0o755)
+		_ = os.Symlink(self, "/bin/sh")
+	}
+}
+
+// canonicalLoaderExists reports whether /lib{,64}/ld-linux-* is present.
+func canonicalLoaderExists() bool {
+	name := loaderName()
+	if name == "" {
+		return false
+	}
+	for _, d := range loaderDirs {
+		if _, err := os.Lstat(filepath.Join(d, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // cmdRun installs a package's closure (plus glibc on linux) and execs its
@@ -163,15 +203,19 @@ func cmdRun(args []string) error {
 	binPath := filepath.Join(prefix, "bin", primaryBin(project, provides))
 	libPath := closureLibPath(closure, dir)
 	env := append(os.Environ(), "LD_LIBRARY_PATH="+libPath)
-	// On linux, invoke the pkgx dynamic loader explicitly so an ELF's PT_INTERP
-	// (a system /lib path absent from a scratch image) is bypassed. Wrapper
-	// scripts (pkgx wraps git, perl tools, … in #!/bin/sh) are NOT ELF — exec
-	// them directly and let the kernel honor the shebang (which needs a shell
-	// in the image, so such bins are not pure-scratch runnable).
-	if goos() == "linux" && isELF(binPath) {
+	// On linux, make the pkgx loader available at /lib/ld-linux and a shell at
+	// /bin/sh (best-effort). Then exec the bin natively so BOTH the bin and any
+	// child processes / wrapper scripts it spawns resolve — parent + child
+	// ELFs via PT_INTERP=/lib/ld-linux, and "#!/bin/sh" wrappers via pkgm's own
+	// embedded shell. If the loader could not be placed (read-only rootfs) and
+	// the bin is an ELF, fall back to invoking the loader explicitly.
+	if goos() == "linux" {
 		if loader := findLoader(dir); loader != "" {
-			argv := append([]string{loader, "--library-path", libPath, binPath}, rest...)
-			return execFn(loader, argv, env)
+			setupScratchRootfs(loader)
+			if !canonicalLoaderExists() && isELF(binPath) {
+				argv := append([]string{loader, "--library-path", libPath, binPath}, rest...)
+				return execFn(loader, argv, env)
+			}
 		}
 	}
 	argv := append([]string{binPath}, rest...)

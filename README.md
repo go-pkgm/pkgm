@@ -115,6 +115,18 @@ linked 2 binaries → /usr/bin
 Prefix precedence: `--prefix`/`-P` flag → `PKGM_PREFIX` → root ? `/usr/local` :
 `~/.local` (falling back to `/usr/local` when there is no usable `$HOME`).
 
+### embedded shell
+
+Some pkgx tools ship as `#!/bin/sh` wrapper scripts (git, several perl utils)
+that set up env and exec the real ELF. On `FROM scratch` there is no shell. So
+pkgm **embeds a pure-Go POSIX shell** (`mvdan.cc/sh`) and, on `run`, makes
+itself available as `/bin/sh` and symlinks the pkgx loader to `/lib/ld-linux`
+(best-effort; a no-op on a normal system). A wrapper script then resolves to
+pkgm's own shell, and every bottle ELF it execs — parent and children —
+resolves its `PT_INTERP` natively. pkgm also implements the coreutils those
+wrappers commonly call (`dirname`, `basename`) in Go, so no external coreutils
+are needed. You can also use it directly: `pkgm sh script.sh` / `pkgm sh -c '…'`.
+
 ## How it works
 
 1. **resolve** — read `<project>/package.yml` from the pkgx pantry and walk the

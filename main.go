@@ -87,7 +87,14 @@ func parseArgs(argv []string) ([]string, flags) {
 	return pos, f
 }
 
-func main() { os.Exit(run(os.Args[1:])) }
+func main() {
+	// When invoked as /bin/sh (or `pkgm sh …`), act as the embedded shell so
+	// pkgx wrapper scripts run on a FROM-scratch image with no external shell.
+	if isShellInvocation(os.Args[0], os.Args[1:]) {
+		os.Exit(runShell(os.Args[1:]))
+	}
+	os.Exit(run(os.Args[1:]))
+}
 
 // run is the testable entry point; it returns the process exit code.
 func run(argv []string) int {
