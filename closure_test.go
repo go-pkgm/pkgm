@@ -174,6 +174,8 @@ func TestProjectForSonameAddedMappings(t *testing.T) {
 		"libgflags.so.2.2":         "gflags.github.io",
 		"libtinfow.so.6":           "invisible-island.net/ncurses",
 		"libprotoc.so.25.7.0":      "protobuf.dev",
+		"libcap.so.2":              "kernel.org/libcap",
+		"libudev.so.1":             "github.com/eudev-project/eudev",
 	}
 	for in, want := range cases {
 		if got := projectForSoname(in); got != want {

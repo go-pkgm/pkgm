@@ -63,6 +63,10 @@ var sonameProject = map[string]string{
 	"libprotoc":    "protobuf.dev", // protoc lib; libprotobuf is prefix-mapped below
 	"libclang":     "llvm.org",
 	"libgflags":    "gflags.github.io",
+	"libcap":       "kernel.org/libcap",
+	// eudev is the lightweight standalone libudev provider (a few files) vs
+	// pulling all of systemd (200+ binaries) just for libudev.so.1.
+	"libudev": "github.com/eudev-project/eudev",
 }
 
 // sonamePrefixProject maps a soname PREFIX to its provider, for libraries that
