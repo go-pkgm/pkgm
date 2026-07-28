@@ -139,20 +139,50 @@ var loaderDirs = []string{"/lib", "/lib64"}
 // setupScratchRootfs makes the pkgx loader and a shell available at their
 // canonical absolute paths (best-effort). On a FROM-scratch image this lets
 // every bottle ELF — the one we exec AND any child processes it spawns —
-// resolve its PT_INTERP=/lib/ld-linux natively, and lets "#!/bin/sh" wrapper
-// scripts resolve to pkgm's own embedded shell. On a normal system these paths
-// already exist, so os.Symlink fails and is ignored (no clobbering).
-func setupScratchRootfs(loader string) {
+// resolve its PT_INTERP=/lib/ld-linux natively, and (when shellPath is set)
+// lets "#!/bin/sh" wrapper scripts resolve to the pkgx bash we installed. On a
+// normal system these paths already exist, so os.Symlink fails and is ignored
+// (no clobbering).
+func setupScratchRootfs(loader, shellPath string) {
 	if name := loaderName(); name != "" {
 		for _, d := range loaderDirs {
 			_ = os.MkdirAll(d, 0o755)
 			_ = os.Symlink(loader, filepath.Join(d, name))
 		}
 	}
-	if self, err := os.Executable(); err == nil {
+	if shellPath != "" {
 		_ = os.MkdirAll("/bin", 0o755)
-		_ = os.Symlink(self, "/bin/sh")
+		_ = os.Symlink(shellPath, "/bin/sh")
 	}
+}
+
+// mergeClosures appends the packages of b not already in a (dedup by project).
+func mergeClosures(a, b []resolved) []resolved {
+	have := map[string]bool{}
+	for _, r := range a {
+		have[r.project] = true
+	}
+	for _, r := range b {
+		if !have[r.project] {
+			a = append(a, r)
+			have[r.project] = true
+		}
+	}
+	return a
+}
+
+// findClosureBin returns the path to <project>/…/bin/<name> if that project is
+// in the installed closure, else "".
+func findClosureBin(closure []resolved, dir, project, name string) string {
+	for _, r := range closure {
+		if r.project == project {
+			p := filepath.Join(dir, project, "v"+r.version.raw, "bin", name)
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 // canonicalLoaderExists reports whether /lib{,64}/ld-linux-* is present.
@@ -202,16 +232,34 @@ func cmdRun(args []string) error {
 	prefix := filepath.Join(dir, project, "v"+self.version.raw)
 	binPath := filepath.Join(prefix, "bin", primaryBin(project, provides))
 	libPath := closureLibPath(closure, dir)
+	var shellPath string
+	var pathDirs []string
+	// If the target is a "#!/bin/sh" wrapper (pkgx wraps git, perl tools, …),
+	// install the pkgx bash + coreutils and run it under those real tools —
+	// pkgm is a package manager, not a shell. A real bash has the dash/bash
+	// set -e semantics the wrappers rely on, and coreutils provides dirname etc.
+	if goos() == "linux" && !isELF(binPath) {
+		if sh, err := completeClosure(map[string]string{"gnu.org/bash": "*", "gnu.org/coreutils": "*"}, dir); err == nil {
+			closure = mergeClosures(closure, sh)
+			libPath = closureLibPath(closure, dir)
+			shellPath = findClosureBin(closure, dir, "gnu.org/bash", "bash")
+			if cu := findClosureBin(closure, dir, "gnu.org/coreutils", "dirname"); cu != "" {
+				pathDirs = append(pathDirs, filepath.Dir(cu))
+			}
+		}
+	}
 	env := append(os.Environ(), "LD_LIBRARY_PATH="+libPath)
-	// On linux, make the pkgx loader available at /lib/ld-linux and a shell at
-	// /bin/sh (best-effort). Then exec the bin natively so BOTH the bin and any
-	// child processes / wrapper scripts it spawns resolve — parent + child
-	// ELFs via PT_INTERP=/lib/ld-linux, and "#!/bin/sh" wrappers via pkgm's own
-	// embedded shell. If the loader could not be placed (read-only rootfs) and
-	// the bin is an ELF, fall back to invoking the loader explicitly.
+	if len(pathDirs) > 0 {
+		env = append(env, "PATH="+strings.Join(pathDirs, ":")+":"+os.Getenv("PATH"))
+	}
+	// On linux, make the pkgx loader available at /lib/ld-linux and (for wrapper
+	// scripts) bash at /bin/sh (best-effort). Then exec the bin natively so BOTH
+	// the bin and any child processes / wrapper scripts it spawns resolve. If the
+	// loader could not be placed (read-only rootfs) and the bin is an ELF, fall
+	// back to invoking the loader explicitly.
 	if goos() == "linux" {
 		if loader := findLoader(dir); loader != "" {
-			setupScratchRootfs(loader)
+			setupScratchRootfs(loader, shellPath)
 			if !canonicalLoaderExists() && isELF(binPath) {
 				argv := append([]string{loader, "--library-path", libPath, binPath}, rest...)
 				return execFn(loader, argv, env)

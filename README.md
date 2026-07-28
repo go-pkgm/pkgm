@@ -115,17 +115,17 @@ linked 2 binaries → /usr/bin
 Prefix precedence: `--prefix`/`-P` flag → `PKGM_PREFIX` → root ? `/usr/local` :
 `~/.local` (falling back to `/usr/local` when there is no usable `$HOME`).
 
-### embedded shell
+### wrapper scripts
 
 Some pkgx tools ship as `#!/bin/sh` wrapper scripts (git, several perl utils)
-that set up env and exec the real ELF. On `FROM scratch` there is no shell. So
-pkgm **embeds a pure-Go POSIX shell** (`mvdan.cc/sh`) and, on `run`, makes
-itself available as `/bin/sh` and symlinks the pkgx loader to `/lib/ld-linux`
-(best-effort; a no-op on a normal system). A wrapper script then resolves to
-pkgm's own shell, and every bottle ELF it execs — parent and children —
-resolves its `PT_INTERP` natively. pkgm also implements the coreutils those
-wrappers commonly call (`dirname`, `basename`) in Go, so no external coreutils
-are needed. You can also use it directly: `pkgm sh script.sh` / `pkgm sh -c '…'`.
+that set up env and exec the real ELF. On `FROM scratch` there is no shell — so
+pkgm, being a package manager, **installs the pkgx `gnu.org/bash` +
+`gnu.org/coreutils`** and points `/bin/sh` at that real bash (and puts coreutils
+like `dirname` on `PATH`). It also symlinks the pkgx loader to `/lib/ld-linux`
+(best-effort; a no-op on a normal system) so every bottle ELF — the wrapper's
+target and any children — resolves its `PT_INTERP` natively. Using the real
+pkgx bash (rather than reimplementing a shell) means the wrappers get exactly
+the `set -e` semantics they rely on. That is how `git` runs on scratch.
 
 ## How it works
 
