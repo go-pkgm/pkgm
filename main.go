@@ -35,6 +35,7 @@ flags:
   -v, --version     show version
   -p, --pin         pin the requested version(s) exactly
   -P, --prefix DIR  install prefix (bins go to DIR/bin); overrides root detection
+  -s, --from-scratch  also pull the implicit libc/gcc closure (FROM-scratch ready)
 
 env:
   PKGX_DIR          bottle store (default: ~/.pkgx)
@@ -43,8 +44,8 @@ env:
 `
 
 type flags struct {
-	help, showVersion, pin bool
-	prefix                 string
+	help, showVersion, pin, scratch bool
+	prefix                          string
 }
 
 // parseArgs splits flags from positional arguments (getopt-style, matching the
@@ -62,6 +63,8 @@ func parseArgs(argv []string) ([]string, flags) {
 			f.showVersion = true
 		case a == "-p" || a == "--pin":
 			f.pin = true
+		case a == "-s" || a == "--from-scratch":
+			f.scratch = true
 		case a == "-P" || a == "--prefix":
 			if i+1 < len(argv) {
 				i++
@@ -187,20 +190,34 @@ func cmdInstall(args []string, prefix string, f flags) error {
 		roots[p] = c
 	}
 	dir := pkgxDir()
-	closure, err := resolveClosure(roots)
-	if err != nil {
-		return err
-	}
-	for _, r := range closure {
-		fresh, err := installBottle(r, dir)
+	var closure []resolved
+	var err error
+	if f.scratch {
+		// Materialize the complete FROM-scratch closure (declared deps + the
+		// implicit glibc/libgcc_s/libstdc++/libatomic system libraries).
+		closure, err = completeClosure(roots, dir)
 		if err != nil {
-			return fmt.Errorf("%s: %w", r.project, err)
+			return err
 		}
-		state := "cached"
-		if fresh {
-			state = "installed"
+		for _, r := range closure {
+			fmt.Printf("  closure   %s v%s\n", r.project, r.version.raw)
 		}
-		fmt.Printf("  %-9s %s v%s\n", state, r.project, r.version.raw)
+	} else {
+		closure, err = resolveClosure(roots)
+		if err != nil {
+			return err
+		}
+		for _, r := range closure {
+			fresh, err := installBottle(r, dir)
+			if err != nil {
+				return fmt.Errorf("%s: %w", r.project, err)
+			}
+			state := "cached"
+			if fresh {
+				state = "installed"
+			}
+			fmt.Printf("  %-9s %s v%s\n", state, r.project, r.version.raw)
+		}
 	}
 	n, err := stubBins(closure, dir, prefix)
 	if err != nil {

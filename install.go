@@ -106,18 +106,12 @@ func cmdRun(args []string) error {
 		rest = rest[1:]
 	}
 	dir := pkgxDir()
-	roots := map[string]string{project: "*"}
-	if goos() == "linux" {
-		roots["gnu.org/glibc"] = "*"
-	}
-	closure, err := resolveClosure(roots)
+	// completeClosure installs the declared closure AND (on linux) the implicit
+	// system-library bottles (glibc + libgcc_s/libstdc++ + libatomic) detected
+	// from the bottles' own ELF NEEDED, so the package runs on FROM scratch.
+	closure, err := completeClosure(map[string]string{project: "*"}, dir)
 	if err != nil {
 		return err
-	}
-	for _, r := range closure {
-		if _, err := installBottle(r, dir); err != nil {
-			return fmt.Errorf("%s: %w", r.project, err)
-		}
 	}
 	_, provides, err := fetchMeta(project)
 	if err != nil {

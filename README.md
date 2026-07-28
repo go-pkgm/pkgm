@@ -70,6 +70,26 @@ GNU bash, version 5.3.0(1)-release (aarch64-unknown-linux-gnu)
 A `FROM scratch` image whose only file is the `pkgm` binary can install **and
 run** real packages, with no system libc.
 
+### automatic closure completion
+
+pkgx bottles link the "implicit system" libraries — `libc`/`libm`/`libpthread`
+(glibc) and, for C++ packages, `libgcc_s`/`libstdc++`/`libatomic` (gcc) —
+without declaring them, because pkgx assumes a host toolchain. On `FROM
+scratch` there is no host. `run`, and `install --from-scratch`/`-s`, read each
+bottle's ELF `DT_NEEDED` (via Go's `debug/elf`) and pull the bottles that fill
+the gap automatically:
+
+- glibc → `gnu.org/glibc`
+- `libgcc_s`/`libstdc++` → `gnu.org/gcc/libstdcxx`
+- `libatomic`/`libgomp` → `gnu.org/gcc`
+
+So a C++ package works with no per-recipe changes:
+
+```sh
+$ docker run --rm pkgm-scratch run nodejs.org -- --version   # pulls glibc + libstdcxx
+v22.x.x
+```
+
 ### root without sudo
 
 A scratch container runs as **root**, has **no `sudo`**, and often no `$HOME`.
