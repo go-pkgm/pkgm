@@ -239,6 +239,36 @@ func TestResolveClosureAndInstall(t *testing.T) {
 	}
 }
 
+func TestInstallBottleConcurrent(t *testing.T) {
+	defer fakeServer(t, map[string]fakePkg{
+		"acme.org/tool": {
+			versions: []string{"1.0.0"},
+			yaml:     "provides:\n  - bin/tool\n",
+			files:    map[string]string{"bin/tool": "#!x\n", "lib/libx.so": "x"},
+		},
+	})()
+	dir := t.TempDir()
+	r := resolved{"acme.org/tool", parseVer("1.0.0")}
+	// Many workers install the same bottle into one PKGX_DIR at once.
+	errs := make(chan error, 12)
+	for i := 0; i < 12; i++ {
+		go func() { _, e := installBottle(r, dir); errs <- e }()
+	}
+	for i := 0; i < 12; i++ {
+		if e := <-errs; e != nil {
+			t.Errorf("concurrent install error: %v", e)
+		}
+	}
+	// exactly one clean prefix, no leftover temp dirs
+	if _, err := os.Stat(filepath.Join(dir, "acme.org/tool/v1.0.0/bin/tool")); err != nil {
+		t.Errorf("missing extracted bin after concurrent install: %v", err)
+	}
+	tmps, _ := filepath.Glob(filepath.Join(dir, ".tmp-*"))
+	if len(tmps) != 0 {
+		t.Errorf("stray temp dirs: %v", tmps)
+	}
+}
+
 func TestInstallBottleXZFallback(t *testing.T) {
 	// gzip 404s -> exercises the .tar.xz branch error path (no xz body served).
 	defer fakeServer(t, map[string]fakePkg{

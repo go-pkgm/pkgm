@@ -286,6 +286,9 @@ func resolveClosure(roots map[string]string) ([]resolved, error) {
 
 // installBottle downloads and extracts one bottle into pkgxDir (skips if the
 // versioned prefix already exists), then writes major/minor convenience links.
+// Extraction is atomic — the bottle is unpacked into a temp dir and the
+// versioned prefix is renamed into place — so concurrent installs sharing one
+// PKGX_DIR never observe a half-extracted prefix.
 func installBottle(r resolved, pkgxDir string) (bool, error) {
 	prefix := filepath.Join(pkgxDir, r.project, "v"+r.version.raw)
 	if st, err := os.Stat(prefix); err == nil && st.IsDir() {
@@ -313,7 +316,27 @@ func installBottle(r resolved, pkgxDir string) (bool, error) {
 		defer gz.Close()
 		dec = gz
 	}
-	if err := untar(dec, pkgxDir); err != nil {
+	// Unpack into a private temp dir, then atomically rename the extracted
+	// <project>/v<ver> into place.
+	if err := os.MkdirAll(pkgxDir, 0o755); err != nil {
+		return false, err
+	}
+	tmp, err := os.MkdirTemp(pkgxDir, ".tmp-")
+	if err != nil {
+		return false, err
+	}
+	defer os.RemoveAll(tmp)
+	if err := untar(dec, tmp); err != nil {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(prefix), 0o755); err != nil {
+		return false, err
+	}
+	if err := os.Rename(filepath.Join(tmp, r.project, "v"+r.version.raw), prefix); err != nil {
+		// Another concurrent worker may have installed it meanwhile.
+		if st, e := os.Stat(prefix); e == nil && st.IsDir() {
+			return false, nil
+		}
 		return false, err
 	}
 	writeVersionLinks(pkgxDir, r)
