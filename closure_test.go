@@ -40,6 +40,24 @@ func TestImplicitRoots(t *testing.T) {
 	}
 }
 
+func TestProjectForSoname(t *testing.T) {
+	// exact-stem map
+	if projectForSoname("libz.so.1") != "zlib.net" {
+		t.Error("libz exact stem")
+	}
+	// prefix map (abseil ships many differently-named libabsl_*.so)
+	if projectForSoname("libabsl_die_if_null.so.2505.0.0") != "abseil.io" {
+		t.Error("libabsl prefix")
+	}
+	if projectForSoname("libprotobuf-lite.so.32") != "protobuf.dev" {
+		t.Error("libprotobuf prefix")
+	}
+	// unknown
+	if projectForSoname("libwhatever.so.9") != "" {
+		t.Error("unknown should be empty")
+	}
+}
+
 func TestPrefixesOf(t *testing.T) {
 	closure := []resolved{{"acme.org/tool", parseVer("1.2.3")}}
 	got := prefixesOf(closure, "/pkgx")

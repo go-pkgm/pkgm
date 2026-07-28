@@ -72,6 +72,29 @@ scratch with **no missing-library failures** — the `DT_NEEDED`-driven closure
 plus the `soname → project` table cover the implicit graph, and wrapper
 scripts run under the real pkgx bash.
 
+## Pantry-wide audit
+
+An audit of the whole pantry (linux/aarch64):
+
+- **Availability** — 1818 of 1896 projects (96%) publish a linux bottle, so
+  nearly the entire pantry is a FROM-scratch candidate.
+- **Runtime sample** — a diverse 100-project sample run under `pkgm run … --version`:
+  39 PASS, 38 no runnable bin / no `--version` (libraries; harness bias), 20
+  non-zero exit on `--version` (mostly tools without a `--version` flag), and
+  only **2 missing-library failures** — both `libabsl_*` (abseil), in `grpc.io`
+  (`grpc_csharp_plugin`) and `mosh.org`.
+
+Those two are **not** closure gaps pkgm can fill: the bottles were built against
+an abseil whose soname (`…so.2501`, `…so.2401`) no *declared/available* abseil
+version provides — `grpc.io` pins `abseil.io: ^20250512` (soname `2505`). This
+is a pantry bottle-vs-declared-dependency drift; pkgx itself would fail there
+too. No consumer tool can supply a soname no bottle ships.
+
+Net: the `DT_NEEDED`-driven closure resolves the implicit graph across the
+pantry, with the only observed failures being upstream version-pin drift. The
+`soname → project` table also gained prefix matching (`projectForSoname`) for
+multi-`.so` projects such as abseil (`libabsl_*`), protobuf and re2.
+
 ## Proposal to the pkgx / pantry maintainers
 
 The information needed to run a bottle standalone (its complete runtime closure)

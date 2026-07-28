@@ -55,6 +55,29 @@ var sonameProject = map[string]string{
 	"libcrypt":     "github.com/besser82/libxcrypt", // glibc 2.38+ dropped libcrypt
 }
 
+// sonamePrefixProject maps a soname PREFIX to its provider, for libraries that
+// ship many differently-named sonames from one project (e.g. abseil's dozens
+// of libabsl_*.so). Consulted when the exact-stem map misses.
+var sonamePrefixProject = map[string]string{
+	"libabsl":     "abseil.io",
+	"libprotobuf": "protobuf.dev",
+	"libre2":      "github.com/google/re2",
+}
+
+// projectForSoname resolves a NEEDED soname to its providing pkgx project via
+// the exact-stem map first, then the prefix map. Returns "" if unknown.
+func projectForSoname(soname string) string {
+	if p := sonameProject[sonameBase(soname)]; p != "" {
+		return p
+	}
+	for pfx, p := range sonamePrefixProject {
+		if strings.HasPrefix(soname, pfx) {
+			return p
+		}
+	}
+	return ""
+}
+
 // sonameBase reduces a soname like "libz.so.1" to its stem "libz".
 func sonameBase(soname string) string {
 	if i := strings.Index(soname, ".so"); i >= 0 {
@@ -181,7 +204,7 @@ func completeClosure(roots map[string]string, dir string) ([]resolved, error) {
 			if provided[soname] {
 				continue
 			}
-			if proj := sonameProject[sonameBase(soname)]; proj != "" && !have[proj] {
+			if proj := projectForSoname(soname); proj != "" && !have[proj] {
 				extra[proj] = "*"
 			}
 		}
