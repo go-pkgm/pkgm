@@ -48,6 +48,35 @@ func TestPrefixesOf(t *testing.T) {
 	}
 }
 
+func TestSonameBase(t *testing.T) {
+	cases := map[string]string{
+		"libz.so.1":     "libz",
+		"libpcre2-8.so": "libpcre2-8",
+		"libc.so.6":     "libc",
+		"weird":         "weird",
+	}
+	for in, want := range cases {
+		if got := sonameBase(in); got != want {
+			t.Errorf("sonameBase(%q)=%q want %q", in, got, want)
+		}
+	}
+	if sonameProject["libz"] != "zlib.net" {
+		t.Error("libz should map to zlib.net")
+	}
+}
+
+func TestAvailableSonames(t *testing.T) {
+	dir := t.TempDir()
+	prefix := filepath.Join(dir, "p", "v1")
+	_ = os.MkdirAll(filepath.Join(prefix, "lib", "glibc-2.44"), 0o755)
+	_ = os.WriteFile(filepath.Join(prefix, "lib", "libfoo.so.1"), []byte("x"), 0o644)
+	_ = os.WriteFile(filepath.Join(prefix, "lib", "glibc-2.44", "libc.so.6"), []byte("x"), 0o644)
+	got := availableSonames([]string{prefix})
+	if !got["libfoo.so.1"] || !got["libc.so.6"] {
+		t.Errorf("availableSonames = %v", got)
+	}
+}
+
 func TestScanNeededNonELF(t *testing.T) {
 	dir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(dir, "not-an-elf"), []byte("hello"), 0o644)

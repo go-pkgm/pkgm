@@ -54,9 +54,17 @@ type flags struct {
 func parseArgs(argv []string) ([]string, flags) {
 	var f flags
 	var pos []string
+	raw := false // everything after the first "--" is passed through verbatim
 	for i := 0; i < len(argv); i++ {
 		a := argv[i]
+		if raw {
+			pos = append(pos, a)
+			continue
+		}
 		switch {
+		case a == "--":
+			raw = true
+			pos = append(pos, a) // keep the separator so `run` sees the boundary
 		case a == "-h" || a == "--help":
 			f.help = true
 		case a == "-v" || a == "--version":

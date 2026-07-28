@@ -21,6 +21,15 @@ func TestParseArgs(t *testing.T) {
 	if !f2.showVersion {
 		t.Error("want showVersion")
 	}
+	// After "--", tool flags must pass through, NOT be parsed as pkgm's own.
+	pos3, f3 := parseArgs([]string{"run", "nodejs.org", "--", "--version", "-h"})
+	if f3.showVersion || f3.help {
+		t.Errorf("flags after -- were stolen: %+v", f3)
+	}
+	want := []string{"run", "nodejs.org", "--", "--version", "-h"}
+	if strings.Join(pos3, " ") != strings.Join(want, " ") {
+		t.Errorf("passthrough pos = %v", pos3)
+	}
 }
 
 func TestParseReq(t *testing.T) {
