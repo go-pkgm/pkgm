@@ -137,6 +137,12 @@ are needed. You can also use it directly: `pkgm sh script.sh` / `pkgm sh -c '…
 4. **link** — write env-setting stubs (or run through the loader) so the tools
    find their sibling bottles' libraries.
 
+## FROM scratch conformance
+
+See [docs/FROM_SCRATCH.md](docs/FROM_SCRATCH.md) for the package conformance
+matrix, the maintained `soname → project` fix list, and a proposal to the pkgx
+maintainers to publish complete runtime closures.
+
 ## License
 
 BSD-3-Clause © the go-pkgm/pkgm authors.
