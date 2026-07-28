@@ -101,7 +101,13 @@ func (v ver) satisfies(c string) bool {
 		if cmpVer(v, base) < 0 {
 			return false
 		}
-		return sameN(v, base, 2)
+		// ~ pins all-but-the-last specified component: ~2 -> major, ~2.6 and
+		// ~2.6.3 -> major.minor. Pin count = len(base) capped at 2.
+		n := len(base.nums)
+		if n > 2 {
+			n = 2
+		}
+		return sameN(v, base, n)
 	default: // "^" and bare
 		if cmpVer(v, base) < 0 {
 			return false

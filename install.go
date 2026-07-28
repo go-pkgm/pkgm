@@ -26,6 +26,42 @@ func binNames(project string, provides []string) []string {
 	return names
 }
 
+// primaryBin picks the binary to run for a project: the one whose name matches
+// the project's path leaf (gnu.org/wget -> wget) or its domain's second-level
+// label (perl.org -> perl, not the first-listed corelist), else the first
+// provided binary.
+func primaryBin(project string, provides []string) string {
+	names := binNames(project, provides)
+	cands := []string{filepath.Base(project)}
+	if !strings.Contains(project, "/") {
+		if i := strings.Index(project, "."); i > 0 {
+			cands = append(cands, project[:i])
+		}
+	}
+	for _, c := range cands {
+		for _, n := range names {
+			if n == c {
+				return n
+			}
+		}
+	}
+	return names[0]
+}
+
+// isELF reports whether the file at p starts with the ELF magic.
+func isELF(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var magic [4]byte
+	if _, err := f.Read(magic[:]); err != nil {
+		return false
+	}
+	return magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F'
+}
+
 // stubBins writes a small env-setting shell stub into <prefix>/bin for every
 // binary in the closure, mirroring the reference pkgm: the stub exports the
 // closure's LD_LIBRARY_PATH and exec's the real bottle binary.
@@ -124,10 +160,15 @@ func cmdRun(args []string) error {
 		}
 	}
 	prefix := filepath.Join(dir, project, "v"+self.version.raw)
-	binPath := filepath.Join(prefix, "bin", binNames(project, provides)[0])
+	binPath := filepath.Join(prefix, "bin", primaryBin(project, provides))
 	libPath := closureLibPath(closure, dir)
 	env := append(os.Environ(), "LD_LIBRARY_PATH="+libPath)
-	if goos() == "linux" {
+	// On linux, invoke the pkgx dynamic loader explicitly so an ELF's PT_INTERP
+	// (a system /lib path absent from a scratch image) is bypassed. Wrapper
+	// scripts (pkgx wraps git, perl tools, … in #!/bin/sh) are NOT ELF — exec
+	// them directly and let the kernel honor the shebang (which needs a shell
+	// in the image, so such bins are not pure-scratch runnable).
+	if goos() == "linux" && isELF(binPath) {
 		if loader := findLoader(dir); loader != "" {
 			argv := append([]string{loader, "--library-path", libPath, binPath}, rest...)
 			return execFn(loader, argv, env)

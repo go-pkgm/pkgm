@@ -45,6 +45,38 @@ func TestParseReq(t *testing.T) {
 	}
 }
 
+func TestPrimaryBin(t *testing.T) {
+	// prefer the bin matching the project leaf over first-listed
+	if got := primaryBin("perl.org", []string{"bin/corelist", "bin/perl"}); got != "perl" {
+		t.Errorf("primaryBin perl = %q", got)
+	}
+	// fall back to first when no leaf match
+	if got := primaryBin("acme.org/tool", []string{"bin/foo", "bin/bar"}); got != "foo" {
+		t.Errorf("primaryBin fallback = %q", got)
+	}
+	// no provides -> project leaf
+	if got := primaryBin("gnu.org/wget", nil); got != "wget" {
+		t.Errorf("primaryBin no-provides = %q", got)
+	}
+}
+
+func TestIsELF(t *testing.T) {
+	dir := t.TempDir()
+	elfp := filepath.Join(dir, "elf")
+	_ = os.WriteFile(elfp, []byte{0x7f, 'E', 'L', 'F', 0, 0}, 0o755)
+	scriptp := filepath.Join(dir, "script")
+	_ = os.WriteFile(scriptp, []byte("#!/bin/sh\necho hi\n"), 0o755)
+	if !isELF(elfp) {
+		t.Error("elf magic not detected")
+	}
+	if isELF(scriptp) {
+		t.Error("script wrongly detected as ELF")
+	}
+	if isELF(filepath.Join(dir, "missing")) {
+		t.Error("missing file should be false")
+	}
+}
+
 func TestBinNamesAndVersionDir(t *testing.T) {
 	if n := binNames("gnu.org/wget", []string{"bin/wget", "share/x"}); len(n) != 1 || n[0] != "wget" {
 		t.Errorf("binNames provides = %v", n)

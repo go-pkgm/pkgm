@@ -52,6 +52,7 @@ var sonameProject = map[string]string{
 	"libsqlite3":   "sqlite.org",
 	"libgmp":       "gnu.org/gmp",
 	"libmpfr":      "gnu.org/mpfr",
+	"libcrypt":     "github.com/besser82/libxcrypt", // glibc 2.38+ dropped libcrypt
 }
 
 // sonameBase reduces a soname like "libz.so.1" to its stem "libz".

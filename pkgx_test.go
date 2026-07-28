@@ -50,6 +50,9 @@ func TestSatisfies(t *testing.T) {
 		{"2.0.0", "^1.2", false},
 		{"1.2.3", "~1.2", true},
 		{"1.3.0", "~1.2", false},
+		{"2.6.4", "~2", true},  // major-only tilde matches any 2.x
+		{"3.0.0", "~2", false}, // but not 3.x
+		{"2.0.9", "~2", true},
 		{"1.2.3", ">=1.2.0", true},
 		{"1.1.0", ">=1.2.0", false},
 		{"1.2.3", "=1.2.3", true},
