@@ -82,10 +82,11 @@ func TestHostSlug(t *testing.T) {
 // --- fakePkgx: an in-memory dist.pkgx.dev + pantry --------------------------
 
 type fakePkg struct {
-	versions []string
-	yaml     string
-	files    map[string]string // path within prefix -> contents (regular files)
-	xzOnly   bool
+	versions   []string
+	yaml       string
+	files      map[string]string            // path within prefix -> contents (regular files)
+	filesByVer map[string]map[string]string // per-version override of files (for soname-drift tests)
+	xzOnly     bool
 }
 
 func fakeServer(t *testing.T, pkgs map[string]fakePkg) func() {
@@ -128,7 +129,13 @@ func fakeServer(t *testing.T, pkgs map[string]fakePkg) func() {
 			}
 			if strings.HasSuffix(rest, ".tar.gz") {
 				ver := strings.TrimSuffix(rest, ".tar.gz")
-				w.Write(makeBottleGz(t, proj, ver, pk.files))
+				files := pk.files
+				if pk.filesByVer != nil {
+					if f, ok := pk.filesByVer[ver]; ok {
+						files = f
+					}
+				}
+				w.Write(makeBottleGz(t, proj, ver, files))
 				return
 			}
 		}

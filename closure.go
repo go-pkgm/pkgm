@@ -4,6 +4,7 @@ import (
 	"debug/elf"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -53,6 +54,15 @@ var sonameProject = map[string]string{
 	"libgmp":       "gnu.org/gmp",
 	"libmpfr":      "gnu.org/mpfr",
 	"libcrypt":     "github.com/besser82/libxcrypt", // glibc 2.38+ dropped libcrypt
+	"libtinfow":    "invisible-island.net/ncurses",  // wide-char ncurses terminfo
+	"libFLAC":      "xiph.org/flac",
+	"libtheora":    "theora.org",
+	"libgit2":      "libgit2.org",
+	"libcbor":      "github.com/PJK/libcbor",
+	"libavro":      "apache.org/avro",
+	"libprotoc":    "protobuf.dev", // protoc lib; libprotobuf is prefix-mapped below
+	"libclang":     "llvm.org",
+	"libgflags":    "gflags.github.io",
 }
 
 // sonamePrefixProject maps a soname PREFIX to its provider, for libraries that
@@ -62,6 +72,7 @@ var sonamePrefixProject = map[string]string{
 	"libabsl":     "abseil.io",
 	"libprotobuf": "protobuf.dev",
 	"libre2":      "github.com/google/re2",
+	"libboost":    "boost.org", // libboost_regex/system/… all ship from boost.org
 }
 
 // projectForSoname resolves a NEEDED soname to its providing pkgx project via
@@ -184,47 +195,144 @@ func completeClosure(roots map[string]string, dir string) ([]resolved, error) {
 		return closure, nil
 	}
 	have := map[string]bool{}
+	installedVer := map[string]bool{} // "project@version" already in the closure
 	for _, r := range closure {
 		have[r.project] = true
+		installedVer[r.project+"@"+r.version.raw] = true
 	}
-	// Fixpoint: keep pulling providers of unsatisfied sonames.
+	triedSoname := map[string]bool{} // sonames we've already attempted to provide
+	// Fixpoint: keep pulling providers of unsatisfied sonames until none remain.
 	for round := 0; round < 8; round++ {
 		prefixes := prefixesOf(closure, dir)
 		needed := scanNeeded(prefixes)
 		provided := availableSonames(prefixes)
-		extra := map[string]string{}
-		// implicit system libraries (glibc always; gcc runtime when linked)
+		changed := false
+
+		// Implicit system libraries (glibc always; gcc runtime when linked).
+		// These have one obvious latest version, so resolve them as "*".
+		implicit := map[string]string{}
 		for p, c := range implicitRoots(needed) {
 			if !have[p] {
-				extra[p] = c
+				implicit[p] = c
 			}
 		}
-		// undeclared regular-package libraries, mapped by soname stem
-		for soname := range needed {
-			if provided[soname] {
-				continue
-			}
-			if proj := projectForSoname(soname); proj != "" && !have[proj] {
-				extra[proj] = "*"
-			}
-		}
-		if len(extra) == 0 {
-			break
-		}
-		more, err := resolveClosure(extra)
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range more {
-			if have[r.project] {
-				continue
-			}
-			if _, err := installBottle(r, dir); err != nil {
+		if len(implicit) > 0 {
+			more, err := resolveClosure(implicit)
+			if err != nil {
 				return nil, err
 			}
-			have[r.project] = true
+			for _, r := range more {
+				if have[r.project] {
+					continue
+				}
+				if _, err := installBottle(r, dir); err != nil {
+					return nil, err
+				}
+				have[r.project] = true
+				closure = append(closure, r)
+				changed = true
+			}
+		}
+
+		// Undeclared regular-package libraries, mapped by soname. Pull the
+		// NEWEST version of the provider that actually ships the exact soname —
+		// NOT just the latest release, because a soname carries an ABI version
+		// and a newer release may have bumped it (e.g. libxml2 2.15 ships
+		// libxml2.so.16, but a binary linked against libxml2.so.2 needs a 2.x
+		// bottle; likewise openssl 3 ships libssl.so.3, not libssl.so.1.1).
+		for soname := range needed {
+			if provided[soname] || triedSoname[soname] {
+				continue
+			}
+			proj := projectForSoname(soname)
+			if proj == "" {
+				continue
+			}
+			// NB: do NOT skip when have[proj] — the provider may already be in
+			// the closure at a version that ships a DIFFERENT abi soname (e.g.
+			// libxml2 2.15 pulled as a declared dep ships libxml2.so.16, yet a
+			// binary needs libxml2.so.2). Pull the exact-soname version too;
+			// both lib dirs sit on LD_LIBRARY_PATH and each soname resolves.
+			triedSoname[soname] = true
+			r, ok, err := installProvidingSoname(proj, soname, dir)
+			if err != nil || !ok {
+				continue // no examined version provides it — give up on this soname
+			}
+			key := r.project + "@" + r.version.raw
+			if installedVer[key] {
+				continue
+			}
+			installedVer[key] = true
+			have[proj] = true
 			closure = append(closure, r)
+			changed = true
+		}
+
+		if !changed {
+			break
 		}
 	}
 	return closure, nil
+}
+
+// installProvidingSoname installs the newest available version of project whose
+// bottle actually provides the exact soname, trying newest→oldest, and returns
+// that matching bottle. ok is false if no examined version ships the soname.
+// Sonames carry an ABI version a project's latest release may have moved past,
+// so "latest" is not always the right bottle for a specific soname.
+func installProvidingSoname(project, soname, dir string) (resolved, bool, error) {
+	vs, err := fetchVersions(project)
+	if err != nil {
+		return resolved{}, false, err
+	}
+	const maxTry = 40 // bound the walk for a soname no examined version provides
+	tried := 0
+	for _, v := range candidateOrder(vs, soname) {
+		if tried >= maxTry {
+			break
+		}
+		tried++
+		r := resolved{project, v}
+		if _, err := installBottle(r, dir); err != nil {
+			continue // no bottle for this version/platform — try the next one
+		}
+		prefix := filepath.Join(dir, r.project, "v"+r.version.raw)
+		if availableSonames([]string{prefix})[soname] {
+			return r, true, nil
+		}
+	}
+	return resolved{}, false, nil
+}
+
+// candidateOrder returns versions newest-first, but floats versions whose
+// leading number equals the soname's ABI tail to the front — so a version that
+// drifted its soname (e.g. libssl.so.1.1 is openssl 1.1.x, not the latest 3.x;
+// libprotoc.so.25.x is protobuf 25.x) is found without walking every release.
+func candidateOrder(vs []ver, soname string) []ver {
+	hint := sonameABI(soname)
+	var match, rest []ver
+	for i := len(vs) - 1; i >= 0; i-- { // newest first
+		v := vs[i]
+		if hint != "" && len(v.nums) > 0 && strconv.Itoa(v.nums[0]) == hint {
+			match = append(match, v)
+		} else {
+			rest = append(rest, v)
+		}
+	}
+	return append(match, rest...)
+}
+
+// sonameABI extracts the first numeric component after ".so." in a soname,
+// e.g. "libssl.so.1.1" -> "1", "libprotoc.so.25.7.0" -> "25", "libz.so" -> "".
+func sonameABI(soname string) string {
+	i := strings.Index(soname, ".so.")
+	if i < 0 {
+		return ""
+	}
+	tail := soname[i+len(".so."):]
+	j := 0
+	for j < len(tail) && tail[j] >= '0' && tail[j] <= '9' {
+		j++
+	}
+	return tail[:j]
 }

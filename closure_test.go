@@ -103,6 +103,85 @@ func TestScanNeededNonELF(t *testing.T) {
 	}
 }
 
+func TestSonameABI(t *testing.T) {
+	cases := map[string]string{
+		"libssl.so.1.1":       "1",
+		"libprotoc.so.25.7.0": "25",
+		"libfoo.so.2":         "2",
+		"libz.so":             "", // ".so" but no ".so.<n>"
+		"weird":               "",
+	}
+	for in, want := range cases {
+		if got := sonameABI(in); got != want {
+			t.Errorf("sonameABI(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestCandidateOrder(t *testing.T) {
+	vs := []ver{parseVer("1.1.1w"), parseVer("3.0.0"), parseVer("3.5.0")} // ascending
+	// libssl.so.1.1 -> hint "1" floats openssl 1.x ahead of the newer 3.x.
+	got := candidateOrder(vs, "libssl.so.1.1")
+	if got[0].raw != "1.1.1w" {
+		t.Errorf("hint match should lead, got %q", got[0].raw)
+	}
+	if got[1].raw != "3.5.0" || got[2].raw != "3.0.0" {
+		t.Errorf("rest should be newest-first, got %v", []string{got[1].raw, got[2].raw})
+	}
+	// no ABI hint -> pure newest-first.
+	if got = candidateOrder(vs, "libz.so"); got[0].raw != "3.5.0" {
+		t.Errorf("no-hint newest-first, got %q", got[0].raw)
+	}
+}
+
+func TestInstallProvidingSoname(t *testing.T) {
+	defer fakeServer(t, map[string]fakePkg{
+		"xml.org/libxml2": {
+			versions: []string{"2.13.9", "2.15.3"},
+			yaml:     "provides:\n  - bin/xml\n",
+			// the newer release bumped the soname; the older one still ships .so.2
+			filesByVer: map[string]map[string]string{
+				"2.15.3": {"lib/libxml2.so.16": "x"},
+				"2.13.9": {"lib/libxml2.so.2": "x"},
+			},
+		},
+	})()
+	dir := t.TempDir()
+	// The walk must skip 2.15.3 (ships .so.16) and fall back to 2.13.9 (.so.2).
+	r, ok, err := installProvidingSoname("xml.org/libxml2", "libxml2.so.2", dir)
+	if err != nil || !ok {
+		t.Fatalf("expected libxml2.so.2 provider, ok=%v err=%v", ok, err)
+	}
+	if r.version.raw != "2.13.9" {
+		t.Errorf("picked v%s, want 2.13.9", r.version.raw)
+	}
+	// a soname no version provides -> ok=false, no error.
+	if _, ok, err := installProvidingSoname("xml.org/libxml2", "libnope.so.9", dir); ok || err != nil {
+		t.Errorf("absent soname: ok=%v err=%v, want false/nil", ok, err)
+	}
+	// unknown project -> fetchVersions error surfaces.
+	if _, _, err := installProvidingSoname("no.org/x", "libx.so.1", dir); err == nil {
+		t.Error("expected error for unknown project")
+	}
+}
+
+func TestProjectForSonameAddedMappings(t *testing.T) {
+	cases := map[string]string{
+		"libFLAC.so.12":            "xiph.org/flac",
+		"libtheora.so.0":           "theora.org",
+		"libgit2.so.1.7":           "libgit2.org",
+		"libboost_regex.so.1.82.0": "boost.org", // prefix map
+		"libgflags.so.2.2":         "gflags.github.io",
+		"libtinfow.so.6":           "invisible-island.net/ncurses",
+		"libprotoc.so.25.7.0":      "protobuf.dev",
+	}
+	for in, want := range cases {
+		if got := projectForSoname(in); got != want {
+			t.Errorf("projectForSoname(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
 func TestCompleteClosure(t *testing.T) {
 	defer fakeServer(t, map[string]fakePkg{
 		"acme.org/tool": {versions: []string{"1.0.0"}, yaml: "provides:\n  - bin/tool\n", files: map[string]string{"bin/tool": "x"}},
