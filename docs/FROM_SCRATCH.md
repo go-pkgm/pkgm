@@ -60,7 +60,29 @@ Wrapper scripts (`#!/bin/sh`) resolve to pkgm's embedded pure-Go shell
 | nodejs.org | ✅ | C++: libgcc_s + libstdc++ |
 | python.org | ✅ | |
 | perl.org | ✅ | needs libcrypt (undeclared) |
-| git-scm.org | ⚠️ | `#!/bin/sh` wrapper → real ELF now execs; deeper git-internal need under investigation |
+| git-scm.org | ⚠️ | see below — blocked by a `set -e` shell-semantics difference |
+
+### git and `set -e`
+
+git's bottle ships a `#!/bin/sh` wrapper. Its CA-detection loop is:
+
+```sh
+set -e
+for sys_ca in /etc/ssl/certs/ca-certificates.crt … ; do
+    [ -f "$sys_ca" ] && break
+done
+```
+
+On a scratch image none of those files exist, so the last iteration's
+`[ -f … ] && break` evaluates to false. **dash and bash do not treat this as a
+`set -e` failure** (the failing command is the left operand of `&&`, i.e. a
+condition), but **`mvdan.cc/sh` does**, so the wrapper exits 1 before exec'ing
+the real git. The real git ELF itself runs fine on scratch via the pkgx loader
+(`git version 2.55.0`, verified) — only the wrapper's shell semantics differ.
+
+This is an upstream `mvdan.cc/sh` divergence from dash/bash, not a go-pkgm
+logic bug. Tracked for an upstream report; git works on scratch if a
+dash/bash-compatible `/bin/sh` is present instead of the embedded shell.
 
 ## Proposal to the pkgx / pantry maintainers
 

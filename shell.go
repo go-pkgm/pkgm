@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -96,6 +97,10 @@ func runShell(args []string) int {
 	// mistaken for shell set-options. $0 comes from the parser name above.
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+		// Inherit the process environment so wrapper scripts and the ELFs they
+		// exec see LD_LIBRARY_PATH (and everything else) — without this the
+		// child cannot find its shared libraries on a FROM-scratch image.
+		interp.Env(expand.ListEnviron(os.Environ()...)),
 		interp.Params(append([]string{"--"}, params...)...),
 		interp.ExecHandlers(coreutils),
 	)
