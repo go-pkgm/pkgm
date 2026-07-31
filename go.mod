@@ -1,8 +1,10 @@
-module github.com/go-pkgm/pkgm
+module github.com/go-pkgx/pkgm
 
-go 1.26
+go 1.26.4
+
+require github.com/go-pkgx/bottle v0.1.0
 
 require (
-	github.com/ulikunitz/xz v0.5.16
-	gopkg.in/yaml.v3 v3.0.1
+	github.com/ulikunitz/xz v0.5.16 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

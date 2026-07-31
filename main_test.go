@@ -1,13 +1,90 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	yaml "gopkg.in/yaml.v3"
+	"github.com/go-pkgx/bottle"
 )
+
+// --- CLI-level fake pkgx server ---------------------------------------------
+// A compact in-memory dist.pkgx.dev + pantry for exercising the CLI dispatch
+// end-to-end. It points bottle.DistBase / bottle.PantryBase at itself.
+
+type fakePkg struct {
+	versions []string
+	yaml     string
+	files    map[string]string
+}
+
+func fakeServer(t *testing.T, pkgs map[string]fakePkg) func() {
+	t.Helper()
+	osn, arch := bottle.HostSlug()
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		p := strings.TrimPrefix(r.URL.Path, "/")
+		if strings.HasSuffix(p, "/package.yml") {
+			proj := strings.TrimSuffix(p, "/package.yml")
+			if pk, ok := pkgs[proj]; ok {
+				fmt.Fprint(w, pk.yaml)
+				return
+			}
+			http.NotFound(w, r)
+			return
+		}
+		if strings.HasSuffix(p, "/versions.txt") {
+			proj := strings.TrimSuffix(p, "/"+osn+"/"+arch+"/versions.txt")
+			if pk, ok := pkgs[proj]; ok {
+				fmt.Fprint(w, strings.Join(pk.versions, "\n"))
+				return
+			}
+			http.NotFound(w, r)
+			return
+		}
+		for proj, pk := range pkgs {
+			pfx := proj + "/" + osn + "/" + arch + "/v"
+			if !strings.HasPrefix(p, pfx) {
+				continue
+			}
+			rest := strings.TrimPrefix(p, pfx)
+			if strings.HasSuffix(rest, ".tar.gz") {
+				ver := strings.TrimSuffix(rest, ".tar.gz")
+				w.Write(makeBottleGz(t, proj, ver, pk.files))
+				return
+			}
+		}
+		http.NotFound(w, r)
+	})
+	bottle.DistBase, bottle.PantryBase = srv.URL, srv.URL
+	return srv.Close
+}
+
+func makeBottleGz(t *testing.T, project, ver string, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	prefix := project + "/v" + ver + "/"
+	_ = tw.WriteHeader(&tar.Header{Name: prefix, Typeflag: tar.TypeDir, Mode: 0o755})
+	for rel, content := range files {
+		_ = tw.WriteHeader(&tar.Header{Name: prefix + rel, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))})
+		_, _ = tw.Write([]byte(content))
+	}
+	tw.Close()
+	gz.Close()
+	return buf.Bytes()
+}
+
+// --- flag / request parsing -------------------------------------------------
 
 func TestParseArgs(t *testing.T) {
 	pos, f := parseArgs([]string{"install", "-p", "foo", "--help"})
@@ -45,57 +122,24 @@ func TestParseReq(t *testing.T) {
 	}
 }
 
-func TestPrimaryBin(t *testing.T) {
-	// prefer the bin matching the project leaf over first-listed
-	if got := primaryBin("perl.org", []string{"bin/corelist", "bin/perl"}); got != "perl" {
-		t.Errorf("primaryBin perl = %q", got)
+func TestParsePrefixFlag(t *testing.T) {
+	_, f := parseArgs([]string{"install", "--prefix", "/opt", "pkg"})
+	if f.prefix != "/opt" {
+		t.Errorf("--prefix value = %q", f.prefix)
 	}
-	// fall back to first when no leaf match
-	if got := primaryBin("acme.org/tool", []string{"bin/foo", "bin/bar"}); got != "foo" {
-		t.Errorf("primaryBin fallback = %q", got)
+	_, f2 := parseArgs([]string{"install", "--prefix=/usr", "pkg"})
+	if f2.prefix != "/usr" {
+		t.Errorf("--prefix= value = %q", f2.prefix)
 	}
-	// no provides -> project leaf
-	if got := primaryBin("gnu.org/wget", nil); got != "wget" {
-		t.Errorf("primaryBin no-provides = %q", got)
-	}
-}
-
-func TestIsELF(t *testing.T) {
-	dir := t.TempDir()
-	elfp := filepath.Join(dir, "elf")
-	_ = os.WriteFile(elfp, []byte{0x7f, 'E', 'L', 'F', 0, 0}, 0o755)
-	scriptp := filepath.Join(dir, "script")
-	_ = os.WriteFile(scriptp, []byte("#!/bin/sh\necho hi\n"), 0o755)
-	if !isELF(elfp) {
-		t.Error("elf magic not detected")
-	}
-	if isELF(scriptp) {
-		t.Error("script wrongly detected as ELF")
-	}
-	if isELF(filepath.Join(dir, "missing")) {
-		t.Error("missing file should be false")
+	_, f3 := parseArgs([]string{"-P", "/p", "pkg"})
+	if f3.prefix != "/p" {
+		t.Errorf("-P value = %q", f3.prefix)
 	}
 }
 
-func TestBinNamesAndVersionDir(t *testing.T) {
-	if n := binNames("gnu.org/wget", []string{"bin/wget", "share/x"}); len(n) != 1 || n[0] != "wget" {
-		t.Errorf("binNames provides = %v", n)
-	}
-	if n := binNames("acme.org/tool", nil); len(n) != 1 || n[0] != "tool" {
-		t.Errorf("binNames fallback = %v", n)
-	}
+func TestIsVersionDir(t *testing.T) {
 	if !isVersionDir("v1.2.3") || isVersionDir("bin") || isVersionDir("v") {
 		t.Error("isVersionDir")
-	}
-}
-
-func TestDecodeProvidesPlatformMap(t *testing.T) {
-	osn, _ := hostSlug()
-	var n yaml.Node
-	_ = yaml.Unmarshal([]byte(osn+":\n  - bin/x\nother:\n  - bin/y\n"), &n)
-	got := decodeProvides(*n.Content[0]) // the mapping node
-	if len(got) != 1 || got[0] != "bin/x" {
-		t.Errorf("platform provides = %v", got)
 	}
 }
 
@@ -138,25 +182,19 @@ func TestLocalPrefixNoHome(t *testing.T) {
 	}
 }
 
-func TestParsePrefixFlag(t *testing.T) {
-	_, f := parseArgs([]string{"install", "--prefix", "/opt", "pkg"})
-	if f.prefix != "/opt" {
-		t.Errorf("--prefix value = %q", f.prefix)
+func TestKeysAndWarnPath(t *testing.T) {
+	if k := keys(map[string]string{"b": "", "a": ""}); len(k) != 2 || k[0] != "a" {
+		t.Errorf("keys = %v", k)
 	}
-	_, f2 := parseArgs([]string{"install", "--prefix=/usr", "pkg"})
-	if f2.prefix != "/usr" {
-		t.Errorf("--prefix= value = %q", f2.prefix)
-	}
-	_, f3 := parseArgs([]string{"-P", "/p", "pkg"})
-	if f3.prefix != "/p" {
-		t.Errorf("-P value = %q", f3.prefix)
-	}
+	t.Setenv("PATH", "/usr/bin")
+	warnPath("/opt") // just exercises the not-in-path branch
+	t.Setenv("PATH", "/opt/bin")
+	warnPath("/opt") // in-path branch
 }
 
-// end-to-end install/list/outdated/uninstall against the fake server.
+// --- end-to-end dispatch ----------------------------------------------------
+
 func TestCommandsE2E(t *testing.T) {
-	osn, _ := hostSlug()
-	_ = osn
 	defer fakeServer(t, map[string]fakePkg{
 		"acme.org/tool": {
 			versions: []string{"1.0.0", "2.0.0"},
@@ -240,12 +278,12 @@ func TestRunExec(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PKGX_DIR", dir)
 	var gotArgv []string
-	old := execFn
-	execFn = func(argv0 string, argv []string, env []string) error {
+	old := bottle.Exec
+	bottle.Exec = func(argv0 string, argv []string, env []string) error {
 		gotArgv = argv
 		return nil
 	}
-	defer func() { execFn = old }()
+	defer func() { bottle.Exec = old }()
 	if err := cmdRun([]string{"acme.org/tool", "--", "--flag"}); err != nil {
 		t.Fatal(err)
 	}
@@ -258,31 +296,4 @@ func TestRunExec(t *testing.T) {
 	if gotArgv[len(gotArgv)-1] != "--flag" {
 		t.Errorf("trailing arg lost: %v", gotArgv)
 	}
-}
-
-func TestFindLoader(t *testing.T) {
-	dir := t.TempDir()
-	name := map[string]string{"aarch64": "ld-linux-aarch64.so.1", "x86-64": "ld-linux-x86-64.so.2"}[goarch()]
-	if name == "" {
-		t.Skip("unmapped arch")
-	}
-	ldDir := filepath.Join(dir, "gnu.org/glibc/v2.44.0/lib/glibc-2.44")
-	_ = os.MkdirAll(ldDir, 0o755)
-	_ = os.WriteFile(filepath.Join(ldDir, name), []byte("x"), 0o755)
-	if got := findLoader(dir); got == "" || filepath.Base(got) != name {
-		t.Errorf("findLoader = %q", got)
-	}
-	if got := findLoader(t.TempDir()); got != "" {
-		t.Errorf("expected empty for missing loader, got %q", got)
-	}
-}
-
-func TestKeysAndWarnPath(t *testing.T) {
-	if k := keys(map[string]string{"b": "", "a": ""}); len(k) != 2 || k[0] != "a" {
-		t.Errorf("keys = %v", k)
-	}
-	t.Setenv("PATH", "/usr/bin")
-	warnPath("/opt") // just exercises the not-in-path branch
-	t.Setenv("PATH", "/opt/bin")
-	warnPath("/opt") // in-path branch
 }

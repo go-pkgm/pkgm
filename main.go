@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/go-pkgx/bottle"
 )
 
 // version is reported by `pkgm --version`.
@@ -137,15 +139,6 @@ func dispatch(cmd string, args []string, f flags) error {
 	}
 }
 
-// pkgxDir resolves the bottle store.
-func pkgxDir() string {
-	if d := os.Getenv("PKGX_DIR"); d != "" {
-		return d
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".pkgx")
-}
-
 // resolvePrefix decides where binaries are installed. Explicit wins:
 // --prefix flag, then $PKGM_PREFIX (both ideal for a `FROM scratch` image
 // where you are root, there is no sudo, and $HOME is unset). Otherwise it
@@ -197,37 +190,37 @@ func cmdInstall(args []string, prefix string, f flags) error {
 		p, c := parseReq(a, f.pin)
 		roots[p] = c
 	}
-	dir := pkgxDir()
-	var closure []resolved
+	dir := bottle.Dir()
+	var closure []bottle.Resolved
 	var err error
 	if f.scratch {
 		// Materialize the complete FROM-scratch closure (declared deps + the
 		// implicit glibc/libgcc_s/libstdc++/libatomic system libraries).
-		closure, err = completeClosure(roots, dir)
+		closure, err = bottle.CompleteClosure(roots, dir)
 		if err != nil {
 			return err
 		}
 		for _, r := range closure {
-			fmt.Printf("  closure   %s v%s\n", r.project, r.version.raw)
+			fmt.Printf("  closure   %s v%s\n", r.Project, r.Version.Raw)
 		}
 	} else {
-		closure, err = resolveClosure(roots)
+		closure, err = bottle.ResolveClosure(roots)
 		if err != nil {
 			return err
 		}
 		for _, r := range closure {
-			fresh, err := installBottle(r, dir)
+			fresh, err := bottle.Install(r, dir)
 			if err != nil {
-				return fmt.Errorf("%s: %w", r.project, err)
+				return fmt.Errorf("%s: %w", r.Project, err)
 			}
 			state := "cached"
 			if fresh {
 				state = "installed"
 			}
-			fmt.Printf("  %-9s %s v%s\n", state, r.project, r.version.raw)
+			fmt.Printf("  %-9s %s v%s\n", state, r.Project, r.Version.Raw)
 		}
 	}
-	n, err := stubBins(closure, dir, prefix)
+	n, err := bottle.StubBins(closure, dir, prefix)
 	if err != nil {
 		return err
 	}
@@ -245,17 +238,17 @@ func cmdShim(args []string, prefix string) error {
 		p, c := parseReq(a, false)
 		roots[p] = c
 	}
-	dir := pkgxDir()
-	closure, err := resolveClosure(roots)
+	dir := bottle.Dir()
+	closure, err := bottle.ResolveClosure(roots)
 	if err != nil {
 		return err
 	}
 	for _, r := range closure {
-		if _, err := installBottle(r, dir); err != nil {
-			return fmt.Errorf("%s: %w", r.project, err)
+		if _, err := bottle.Install(r, dir); err != nil {
+			return fmt.Errorf("%s: %w", r.Project, err)
 		}
 	}
-	n, err := stubBins(closure, dir, prefix)
+	n, err := bottle.StubBins(closure, dir, prefix)
 	if err != nil {
 		return err
 	}
@@ -267,14 +260,14 @@ func cmdUninstall(args []string, prefix string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("no packages specified")
 	}
-	dir := pkgxDir()
+	dir := bottle.Dir()
 	for _, a := range args {
 		project, _ := parseReq(a, false)
-		_, provides, err := fetchMeta(project)
+		_, provides, err := bottle.FetchMeta(project)
 		if err != nil {
 			return err
 		}
-		for _, name := range binNames(project, provides) {
+		for _, name := range bottle.BinNames(project, provides) {
 			link := filepath.Join(prefix, "bin", name)
 			if err := os.Remove(link); err == nil {
 				fmt.Printf("  removed %s\n", link)
@@ -286,33 +279,33 @@ func cmdUninstall(args []string, prefix string) error {
 }
 
 func cmdList(prefix string) error {
-	for _, p := range installedProjects(pkgxDir()) {
+	for _, p := range installedProjects(bottle.Dir()) {
 		fmt.Println(p)
 	}
 	return nil
 }
 
 func cmdOutdated(prefix string) error {
-	dir := pkgxDir()
+	dir := bottle.Dir()
 	for _, line := range installedProjects(dir) {
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
 			continue
 		}
 		project, have := fields[0], strings.TrimPrefix(fields[1], "v")
-		latest, err := pickVersion(project, "*")
+		latest, err := bottle.PickVersion(project, "*")
 		if err != nil {
 			continue
 		}
-		if latest.raw != have {
-			fmt.Printf("%s %s → %s\n", project, have, latest.raw)
+		if latest.Raw != have {
+			fmt.Printf("%s %s → %s\n", project, have, latest.Raw)
 		}
 	}
 	return nil
 }
 
 func cmdUpdate(prefix string) error {
-	dir := pkgxDir()
+	dir := bottle.Dir()
 	roots := map[string]string{}
 	for _, line := range installedProjects(dir) {
 		if fields := strings.Fields(line); len(fields) == 2 {
