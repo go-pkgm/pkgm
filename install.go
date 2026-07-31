@@ -34,7 +34,7 @@ func cmdRun(args []string) error {
 		return err
 	}
 	prefix := bottle.PrefixOf(project, closure, dir)
-	binPath := filepath.Join(prefix, "bin", bottle.PrimaryBin(project, provides))
+	binPath := bottle.ResolveBinPath(filepath.Join(prefix, "bin", bottle.PrimaryBin(project, provides)))
 	libPath := bottle.LibPath(closure, dir)
 	var shellPath string
 	var pathDirs []string
@@ -52,9 +52,19 @@ func cmdRun(args []string) error {
 			}
 		}
 	}
-	env := append(os.Environ(), "LD_LIBRARY_PATH="+libPath)
-	if len(pathDirs) > 0 {
-		env = append(env, "PATH="+strings.Join(pathDirs, ":")+":"+os.Getenv("PATH"))
+	var env []string
+	if bottle.GOOS() == "windows" {
+		// No LD_LIBRARY_PATH on Windows: DLLs resolve from the exe dir + PATH.
+		// Put the closure's bin+lib dirs on PATH with the native separator.
+		sep := string(os.PathListSeparator)
+		parts := append(append([]string{}, pathDirs...), bottle.LibDirs(closure, dir)...)
+		parts = append(parts, filepath.Dir(binPath))
+		env = append(os.Environ(), "PATH="+strings.Join(parts, sep)+sep+os.Getenv("PATH"))
+	} else {
+		env = append(os.Environ(), "LD_LIBRARY_PATH="+libPath)
+		if len(pathDirs) > 0 {
+			env = append(env, "PATH="+strings.Join(pathDirs, ":")+":"+os.Getenv("PATH"))
+		}
 	}
 	// On linux, make the pkgx loader available at /lib/ld-linux and (for wrapper
 	// scripts) bash at /bin/sh (best-effort). Then exec the bin natively so BOTH
