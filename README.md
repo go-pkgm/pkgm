@@ -1,10 +1,10 @@
 # pkgm
 
-[![CI](https://github.com/go-pkgm/pkgm/actions/workflows/ci.yml/badge.svg)](https://github.com/go-pkgm/pkgm/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/go-pkgm/pkgm.svg)](https://pkg.go.dev/github.com/go-pkgm/pkgm)
+[![CI](https://github.com/go-pkgx/pkgm/actions/workflows/ci.yml/badge.svg)](https://github.com/go-pkgx/pkgm/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/go-pkgx/pkgm.svg)](https://pkg.go.dev/github.com/go-pkgx/pkgm)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
 
-[Home](https://go-pkgm.github.io/) · [Docs](https://go-pkgm.github.io/docs/)
+[Home](https://go-pkgx.github.io/) · [Docs](https://go-pkgx.github.io/docs/)
 
 A **dependency-free, pure-Go** package manager for [pkgx](https://pkgx.sh)
 bottles — a single `CGO_ENABLED=0` binary that runs on a `FROM scratch` image
@@ -15,7 +15,7 @@ The reference `pkgm` is a Deno/TypeScript script that shells out to
 runtime closure just to install a package. `pkgm` replaces all of it with one
 static ~9 MB binary:
 
-| | reference pkgm | go-pkgm/pkgm |
+| | reference pkgm | go-pkgx/pkgm |
 | --- | --- | --- |
 | downloader | curl + openssl + nghttp2 | Go `net/http` (TLS built in, CA bundle embedded) |
 | extractor | info-zip + xz | Go `compress/gzip` + `ulikunitz/xz` |
@@ -26,10 +26,10 @@ static ~9 MB binary:
 ## Install
 
 ```sh
-go install github.com/go-pkgm/pkgm@latest
+go install github.com/go-pkgx/pkgm@latest
 ```
 
-or grab a static binary from the [releases](https://github.com/go-pkgm/pkgm/releases).
+or grab a static binary from the [releases](https://github.com/go-pkgx/pkgm/releases).
 
 ## Usage
 
@@ -150,4 +150,4 @@ maintainers to publish complete runtime closures.
 
 ## License
 
-BSD-3-Clause © the go-pkgm/pkgm authors.
+BSD-3-Clause © the go-pkgx/pkgm authors.
