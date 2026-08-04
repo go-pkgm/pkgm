@@ -2,7 +2,7 @@ module github.com/go-pkgx/pkgm
 
 go 1.26.4
 
-require github.com/go-pkgx/bottle v0.4.1-0.20260803153719-c9b440410cab
+require github.com/go-pkgx/bottle v0.4.1-0.20260804113022-05efd188f140
 
 require (
 	github.com/go-attest/sign v0.1.0 // indirect

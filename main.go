@@ -1,10 +1,13 @@
 // Command pkgm is a dependency-free, pure-Go installer for pkgx bottles.
 //
 // It resolves a package's runtime dependency closure from the pkgx pantry,
-// downloads the bottles from dist.pkgx.dev, and installs them — with no
-// runtime dependencies of its own (a single CGO_ENABLED=0 binary that runs on
-// a `FROM scratch` image). It mirrors the reference pkgm CLI so it is a
-// drop-in replacement, and adds a shell-free `run` for scratch images.
+// downloads the bottles — from the signed OCI registry oci://ghcr.io/go-pkgx/packages
+// by default, verifying each bottle's signature (fail-closed) — and installs
+// them, with no runtime dependencies of its own (a single CGO_ENABLED=0 binary
+// that runs on a `FROM scratch` image). Point PKGX_DIST at the unsigned upstream
+// (https://dist.pkgx.dev) with PKGX_VERIFY=0 for the full pantry. It mirrors the
+// reference pkgm CLI so it is a drop-in replacement, and adds a shell-free `run`
+// for scratch images.
 package main
 
 import (
@@ -41,6 +44,11 @@ flags:
 
 env:
   PKGX_DIR          bottle store (default: ~/.pkgx)
+  PKGX_DIST         bottle source (default: oci://ghcr.io/go-pkgx/packages, the
+                    signed registry; set https://dist.pkgx.dev for the full
+                    unsigned upstream pantry — pair with PKGX_VERIFY=0)
+  PKGX_VERIFY       verify bottle signatures, fail-closed (default: on;
+                    set 0/false/no/off to disable)
   PKGM_PREFIX       default install prefix (ideal for FROM scratch: be root,
                     set PKGM_PREFIX=/usr, no sudo needed)
 `

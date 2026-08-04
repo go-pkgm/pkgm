@@ -44,8 +44,15 @@ pkgm pin          <pkg>@version ...     install pinned to an exact version
 pkgm run|x        <pkg> [-- args...]    run a pkg (works FROM scratch)
 
 flags: -h/--help  -v/--version  -p/--pin
-env:   PKGX_DIR   bottle store (default: ~/.pkgx)
+env:   PKGX_DIR     bottle store (default: ~/.pkgx)
+       PKGX_DIST    bottle source (default: oci://ghcr.io/go-pkgx/packages, signed)
+       PKGX_VERIFY  verify bottle signatures, fail-closed (default: on)
 ```
+
+By default `pkgm install lz4.org` pulls from the signed OCI registry
+`oci://ghcr.io/go-pkgx/packages` and verifies each bottle's signature before
+installing — no env needed. To use the full unsigned upstream pantry instead,
+set `PKGX_DIST=https://dist.pkgx.dev` together with `PKGX_VERIFY=0`.
 
 The `install`/`uninstall`/`shim`/`list`/`outdated`/`update`/`pin` command
 surface and the `~/.local` vs `/usr/local` prefix logic mirror the reference
@@ -137,7 +144,10 @@ the `set -e` semantics they rely on. That is how `git` runs on scratch.
 1. **resolve** — read `<project>/package.yml` from the pkgx pantry and walk the
    runtime `dependencies:` graph breadth-first; pick the highest
    `versions.txt` entry satisfying each constraint (`*`, `^`, `~`, `>=`, `=`).
-2. **download** — fetch `dist.pkgx.dev/<project>/<os>/<arch>/v<ver>.tar.{gz,xz}`.
+2. **download** — fetch `<project>/<os>/<arch>/v<ver>.tar.{gz,xz}` from the bottle
+   source (default: the signed OCI registry `oci://ghcr.io/go-pkgx/packages`,
+   verifying each bottle's signature; `PKGX_DIST=https://dist.pkgx.dev` +
+   `PKGX_VERIFY=0` for the unsigned upstream).
 3. **extract** — stream straight through gzip/xz + tar into `PKGX_DIR`.
 4. **link** — write env-setting stubs (or run through the loader) so the tools
    find their sibling bottles' libraries.

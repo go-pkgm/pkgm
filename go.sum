@@ -1,7 +1,7 @@
 github.com/go-attest/sign v0.1.0 h1:HxDIf7vo1ZOgl+TdCyQQ9qXbwmJBu3LMOlkoIKMnZwc=
 github.com/go-attest/sign v0.1.0/go.mod h1:V+wp/HvvQgVRb+de8UKH4OqvaRJhY4A7MiXwK8FyBuQ=
-github.com/go-pkgx/bottle v0.4.1-0.20260803153719-c9b440410cab h1:RM5A1VMu/erK3gElA1tJjgX8FCRQHecpaRcxUWy3rtc=
-github.com/go-pkgx/bottle v0.4.1-0.20260803153719-c9b440410cab/go.mod h1:UrtuHGlbeVV7A4M63bsMtPCaY71sVAqlPHxNnLSd5aI=
+github.com/go-pkgx/bottle v0.4.1-0.20260804113022-05efd188f140 h1:pMhdyk2ZWqs4Ulxm/jzN5UrBehGsR0eonc+d8tzkuiI=
+github.com/go-pkgx/bottle v0.4.1-0.20260804113022-05efd188f140/go.mod h1:UrtuHGlbeVV7A4M63bsMtPCaY71sVAqlPHxNnLSd5aI=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
