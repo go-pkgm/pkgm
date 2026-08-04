@@ -25,11 +25,32 @@ static ~9 MB binary:
 
 ## Install
 
+**Linux / macOS** — one line:
+
+```sh
+curl -fsSL https://go-pkgx.github.io/install.sh | sh
+```
+
+**Windows** — one line (PowerShell):
+
+```powershell
+irm https://go-pkgx.github.io/install.ps1 | iex
+```
+
+The installer downloads the static binary for your os/arch from the latest
+[release](https://github.com/go-pkgx/pkgm/releases/latest), verifies it against
+the release `SHA256SUMS`, and drops `pkgm` on your `PATH`
+(`$HOME/.local/bin`, or `%LOCALAPPDATA%\Programs\go-pkgx` on Windows). Set
+`PKGM_INSTALL` to override the directory on Unix.
+
+**Go users**:
+
 ```sh
 go install github.com/go-pkgx/pkgm@latest
 ```
 
-or grab a static binary from the [releases](https://github.com/go-pkgx/pkgm/releases).
+Once installed, `pkgm install lz4.org` verifies each bottle against the signed
+registry by default.
 
 ## Usage
 
