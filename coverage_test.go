@@ -1,8 +1,19 @@
 package main
 
 import (
+	"errors"
 	"testing"
 )
+
+func TestRunConfigWarning(t *testing.T) {
+	old := configError
+	defer func() { configError = old }()
+	configError = func() error { return errors.New("bad config") }
+	// The warning is emitted to stderr; the command still runs to completion.
+	if code := run([]string{"--version"}); code != 0 {
+		t.Errorf("--version with config warning code=%d", code)
+	}
+}
 
 func TestRunEntry(t *testing.T) {
 	if code := run([]string{"--version"}); code != 0 {

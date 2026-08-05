@@ -51,6 +51,10 @@ env:
                     set 0/false/no/off to disable)
   PKGM_PREFIX       default install prefix (ideal for FROM scratch: be root,
                     set PKGM_PREFIX=/usr, no sudo needed)
+
+  ~/.pkgx/config.hcl2 sets defaults for the PKGX_* / OCI_* variables above
+  (HCL2 attributes, e.g. PKGX_DIST = "oci://ghcr.io/go-pkgx/packages"). A real
+  environment variable always overrides a value set in the file.
 `
 
 type flags struct {
@@ -99,8 +103,15 @@ func parseArgs(argv []string) ([]string, flags) {
 
 func main() { os.Exit(run(os.Args[1:])) }
 
+// configError reports a load/parse failure of ~/.pkgx/config.hcl2, if any. It
+// is a var so tests can drive the startup-warning path.
+var configError = bottle.ConfigError
+
 // run is the testable entry point; it returns the process exit code.
 func run(argv []string) int {
+	if err := configError(); err != nil {
+		fmt.Fprintln(os.Stderr, "pkgm: warning: ignoring ~/.pkgx/config.hcl2: "+err.Error())
+	}
 	pos, f := parseArgs(argv)
 	if f.help || (len(pos) > 0 && pos[0] == "help") {
 		fmt.Print(usage)
