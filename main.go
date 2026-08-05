@@ -20,10 +20,11 @@ import (
 	"github.com/go-pkgx/bottle"
 )
 
-// version is reported by `pkgm --version`.
-const version = "0.1.0"
+// version is reported by `pkgm --version`. It defaults to "dev" and is
+// overridden at release-build time via -ldflags "-X main.version=<tag>".
+var version = "dev"
 
-const usage = `pkgm ` + version + ` — pure-Go pkgx package manager
+var usage = `pkgm ` + version + ` — pure-Go pkgx package manager
 
 usage:
   pkgm install|i    <pkg>[@version] ...   install to /usr/local (root) or ~/.local
