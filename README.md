@@ -64,10 +64,11 @@ pkgm update|up|upgrade                  update installations to latest
 pkgm pin          <pkg>@version ...     install pinned to an exact version
 pkgm run|x        <pkg> [-- args...]    run a pkg (works FROM scratch)
 
-flags: -h/--help  -v/--version  -p/--pin
+flags: -h/--help  -v/--version  -p/--pin  -P/--prefix DIR  -s/--from-scratch
 env:   PKGX_DIR     bottle store (default: ~/.pkgx)
        PKGX_DIST    bottle source (default: oci://ghcr.io/go-pkgx/packages, signed)
        PKGX_VERIFY  verify bottle signatures, fail-closed (default: on)
+       PKGM_PREFIX  default install prefix (ideal for FROM scratch)
 ```
 
 By default `pkgm install lz4.org` pulls from the signed OCI registry
